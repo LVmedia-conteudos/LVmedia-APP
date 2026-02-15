@@ -105,11 +105,9 @@ const App: React.FC = () => {
       if (!isMounted) return;
 
       if (session?.user) {
-        // Only load if user changed or was null
         if (!currentUser || currentUser.id !== session.user.id) {
-          setIsLoading(true);
-          const userData = await supabaseService.getCurrentUserData(session.user.id);
-          const finalUser = userData || {
+          // 1. Desbloqueia a interface IMEDIATAMENTE usando os metadados da sessão
+          const sessionUser = {
             id: session.user.id,
             email: session.user.email!,
             name: session.user.user_metadata?.name || session.user.email!.split('@')[0],
@@ -117,11 +115,18 @@ const App: React.FC = () => {
             avatar: session.user.user_metadata?.avatar || `https://ui-avatars.com/api/?name=${session.user.user_metadata?.name || session.user.email}&background=random`
           } as any;
 
-          setCurrentUser(finalUser);
-          setIsLoading(false); // Liberar a interface imediatamente
+          setCurrentUser(sessionUser);
+          setIsLoading(false);
 
-          // Carregar dados pesados em segundo plano
-          loadAppData();
+          // 2. Busca o perfil completo e dados do app de forma silenciosa e em paralelo
+          Promise.all([
+            supabaseService.getCurrentUserData(session.user.id),
+            loadAppData()
+          ]).then(([userData]) => {
+            if (userData && isMounted) {
+              setCurrentUser(userData);
+            }
+          });
         }
       } else {
         setCurrentUser(null);
