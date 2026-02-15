@@ -101,12 +101,19 @@ const App: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
 
-    const { data: { subscription } } = supabaseService.onAuthStateChange(async (event, session) => {
-      if (!isMounted) return;
+    // Se as variáveis de ambiente estiverem faltando, não fazemos o usuário esperar
+    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+      console.error('Configuração do Supabase ausente!');
+      setIsLoading(false);
+      return;
+    }
 
-      if (session?.user) {
-        if (!currentUser || currentUser.id !== session.user.id) {
-          // 1. Desbloqueia a interface IMEDIATAMENTE usando os metadados da sessão
+    const init = async () => {
+      try {
+        // Busca a sessão inicial manualmente para ser mais rápido que o listener
+        const session = await supabaseService.getSession();
+
+        if (session?.user && isMounted) {
           const sessionUser = {
             id: session.user.id,
             email: session.user.email!,
@@ -116,37 +123,50 @@ const App: React.FC = () => {
           } as any;
 
           setCurrentUser(sessionUser);
+          // Liberar UI e carregar resto em background
           setIsLoading(false);
+          loadAppData();
 
-          // 2. Busca o perfil completo e dados do app de forma silenciosa e em paralelo
-          Promise.all([
-            supabaseService.getCurrentUserData(session.user.id),
-            loadAppData()
-          ]).then(([userData]) => {
-            if (userData && isMounted) {
-              setCurrentUser(userData);
-            }
+          // Atualiza perfil completo depois
+          supabaseService.getCurrentUserData(session.user.id).then(userData => {
+            if (userData && isMounted) setCurrentUser(userData);
           });
+        } else {
+          if (isMounted) setIsLoading(false);
         }
-      } else {
+      } catch (error) {
+        console.error('Erro na inicialização:', error);
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    const { data: { subscription } } = supabaseService.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+
+      if (event === 'SIGNED_IN' && session?.user) {
+        const sessionUser = {
+          id: session.user.id,
+          email: session.user.email!,
+          name: session.user.user_metadata?.name || session.user.email!.split('@')[0],
+          role: session.user.user_metadata?.role || 'EQUIPE',
+          avatar: session.user.user_metadata?.avatar || `https://ui-avatars.com/api/?name=${session.user.user_metadata?.name || session.user.email}&background=random`
+        } as any;
+        setCurrentUser(sessionUser);
+        setIsLoading(false);
+        loadAppData();
+      } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
-        setTasks([]);
-        setUsers([]);
-        setClients([]);
         setIsLoading(false);
       }
     });
 
-    // Check initial session
-    supabaseService.getSession().then(session => {
-      if (!session && isMounted) setIsLoading(false);
-    });
+    init();
 
     return () => {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [currentUser?.id]); // Depend on user id to avoid re-runs
+  }, []);
 
   const loadAppData = async () => {
     try {
