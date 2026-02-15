@@ -121,7 +121,10 @@ export const deleteUser = async (id: string): Promise<void> => {
 export const getClients = async (): Promise<Client[]> => {
     const { data: clientsData, error: clientsError } = await supabase
         .from('clients')
-        .select('*')
+        .select(`
+            *,
+            content_targets (*)
+        `)
         .order('created_at', { ascending: false });
 
     if (clientsError) {
@@ -129,24 +132,10 @@ export const getClients = async (): Promise<Client[]> => {
         throw clientsError;
     }
 
-    // Fetch targets for each client
-    const clientsWithTargets = await Promise.all(
-        (clientsData || []).map(async (client) => {
-            const { data: targetsData, error: targetsError } = await supabase
-                .from('content_targets')
-                .select('*')
-                .eq('client_id', client.id);
-
-            if (targetsError) {
-                console.error('Error fetching targets:', targetsError);
-                return { ...client, targets: [] };
-            }
-
-            return { ...client, targets: targetsData || [] };
-        })
-    );
-
-    return clientsWithTargets;
+    return (clientsData || []).map(client => ({
+        ...client,
+        targets: (client as any).content_targets || []
+    }));
 };
 
 export const createClient = async (client: Omit<Client, 'id'>, targets: ContentTarget[]): Promise<Client> => {
@@ -261,7 +250,11 @@ export const deleteClient = async (id: string): Promise<void> => {
 export const getTasks = async (): Promise<ContentTask[]> => {
     const { data: tasksData, error: tasksError } = await supabase
         .from('content_tasks')
-        .select('*')
+        .select(`
+            *,
+            task_attachments (url),
+            task_links (url)
+        `)
         .order('created_at', { ascending: false });
 
     if (tasksError) {
@@ -269,28 +262,11 @@ export const getTasks = async (): Promise<ContentTask[]> => {
         throw tasksError;
     }
 
-    // Fetch attachments and links for each task
-    const tasksWithDetails = await Promise.all(
-        (tasksData || []).map(async (task) => {
-            const { data: attachmentsData } = await supabase
-                .from('task_attachments')
-                .select('url')
-                .eq('task_id', task.id);
-
-            const { data: linksData } = await supabase
-                .from('task_links')
-                .select('url')
-                .eq('task_id', task.id);
-
-            return {
-                ...task,
-                attachments: attachmentsData?.map(a => a.url) || [],
-                links: linksData?.map(l => l.url) || []
-            };
-        })
-    );
-
-    return tasksWithDetails;
+    return (tasksData || []).map(task => ({
+        ...task,
+        attachments: (task as any).task_attachments?.map((a: any) => a.url) || [],
+        links: (task as any).task_links?.map((l: any) => l.url) || []
+    }));
 };
 
 export const createTask = async (task: Omit<ContentTask, 'id' | 'createdAt'>): Promise<ContentTask> => {

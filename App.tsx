@@ -99,12 +99,15 @@ const App: React.FC = () => {
 
   // Check for session and load data on mount
   useEffect(() => {
+    let isMounted = true;
+    let authInitialized = false;
+
     const initAuth = async () => {
       try {
         setIsLoading(true);
         const session = await supabaseService.getSession();
 
-        if (session?.user) {
+        if (session?.user && isMounted) {
           const userData = await supabaseService.getCurrentUserData(session.user.id);
           const finalUser = userData || {
             id: session.user.id,
@@ -119,32 +122,55 @@ const App: React.FC = () => {
       } catch (error) {
         console.error('Auth initialization error:', error);
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+          authInitialized = true;
+        }
       }
     };
 
     const { data: { subscription } } = supabaseService.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+
       if (session?.user) {
-        const userData = await supabaseService.getCurrentUserData(session.user.id);
-        const finalUser = userData || {
-          id: session.user.id,
-          email: session.user.email!,
-          name: session.user.user_metadata?.name || session.user.email!.split('@')[0],
-          role: session.user.user_metadata?.role || 'EQUIPE',
-          avatar: session.user.user_metadata?.avatar || `https://ui-avatars.com/api/?name=${session.user.user_metadata?.name || session.user.email}&background=random`
-        } as any;
-        setCurrentUser(finalUser);
-        await loadAppData();
+        // Only trigger loadAppData if we haven't already initialized or if it's a new sign in
+        if (!currentUser || currentUser.id !== session.user.id) {
+          const userData = await supabaseService.getCurrentUserData(session.user.id);
+          const finalUser = userData || {
+            id: session.user.id,
+            email: session.user.email!,
+            name: session.user.user_metadata?.name || session.user.email!.split('@')[0],
+            role: session.user.user_metadata?.role || 'EQUIPE',
+            avatar: session.user.user_metadata?.avatar || `https://ui-avatars.com/api/?name=${session.user.user_metadata?.name || session.user.email}&background=random`
+          } as any;
+          setCurrentUser(finalUser);
+          await loadAppData();
+          setIsLoading(false);
+        }
       } else {
         setCurrentUser(null);
         setTasks([]);
         setUsers([]);
         setClients([]);
+        setIsLoading(false);
       }
     });
 
     initAuth();
-    return () => subscription.unsubscribe();
+
+    // Safety timeout to ensure loading screen doesn't hang forever
+    const timeout = setTimeout(() => {
+      if (isMounted && isLoading) {
+        console.warn('Initial load timed out. Forcing loading state to false.');
+        setIsLoading(false);
+      }
+    }, 10000);
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const loadAppData = async () => {
