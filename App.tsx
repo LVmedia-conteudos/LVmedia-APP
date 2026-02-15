@@ -118,10 +118,10 @@ const App: React.FC = () => {
           } as any;
 
           setCurrentUser(finalUser);
-          // Load data in parallel, but release the UI immediately
-          loadAppData().finally(() => {
-            if (isMounted) setIsLoading(false);
-          });
+          setIsLoading(false); // Liberar a interface imediatamente
+
+          // Carregar dados pesados em segundo plano
+          loadAppData();
         }
       } else {
         setCurrentUser(null);
@@ -146,6 +146,7 @@ const App: React.FC = () => {
   const loadAppData = async () => {
     try {
       const [usersData, clientsData, tasksData] = await Promise.all([
+        supabaseService.getUsers(),
         supabaseService.getClients(),
         supabaseService.getTasks()
       ]);
