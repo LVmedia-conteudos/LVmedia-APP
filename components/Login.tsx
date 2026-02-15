@@ -23,19 +23,8 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
         try {
             if (isLogin) {
-                const { user } = await supabaseService.signIn(email, password);
-                if (user) {
-                    const userData = await supabaseService.getCurrentUserData(user.id);
-                    // Fallback se o trigger ainda não tiver criado o registro no public.users
-                    const finalUser = userData || {
-                        id: user.id,
-                        email: user.email!,
-                        name: user.user_metadata?.name || email.split('@')[0],
-                        role: user.user_metadata?.role || 'EQUIPE',
-                        avatar: user.user_metadata?.avatar || `https://ui-avatars.com/api/?name=${user.user_metadata?.name || email}&background=random`
-                    };
-                    onLoginSuccess(finalUser);
-                }
+                await supabaseService.signIn(email, password);
+                // O listener no App.tsx cuidará do redirecionamento
             } else {
                 const { user } = await supabaseService.signUp(email, password, name);
                 if (user) {

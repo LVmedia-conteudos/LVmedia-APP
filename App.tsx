@@ -100,41 +100,14 @@ const App: React.FC = () => {
   // Check for session and load data on mount
   useEffect(() => {
     let isMounted = true;
-    let authInitialized = false;
-
-    const initAuth = async () => {
-      try {
-        setIsLoading(true);
-        const session = await supabaseService.getSession();
-
-        if (session?.user && isMounted) {
-          const userData = await supabaseService.getCurrentUserData(session.user.id);
-          const finalUser = userData || {
-            id: session.user.id,
-            email: session.user.email!,
-            name: session.user.user_metadata?.name || session.user.email!.split('@')[0],
-            role: session.user.user_metadata?.role || 'EQUIPE',
-            avatar: session.user.user_metadata?.avatar || `https://ui-avatars.com/api/?name=${session.user.user_metadata?.name || session.user.email}&background=random`
-          } as any;
-          setCurrentUser(finalUser);
-          await loadAppData();
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-          authInitialized = true;
-        }
-      }
-    };
 
     const { data: { subscription } } = supabaseService.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
 
       if (session?.user) {
-        // Only trigger loadAppData if we haven't already initialized or if it's a new sign in
+        // Only load if user changed or was null
         if (!currentUser || currentUser.id !== session.user.id) {
+          setIsLoading(true);
           const userData = await supabaseService.getCurrentUserData(session.user.id);
           const finalUser = userData || {
             id: session.user.id,
@@ -143,9 +116,12 @@ const App: React.FC = () => {
             role: session.user.user_metadata?.role || 'EQUIPE',
             avatar: session.user.user_metadata?.avatar || `https://ui-avatars.com/api/?name=${session.user.user_metadata?.name || session.user.email}&background=random`
           } as any;
+
           setCurrentUser(finalUser);
-          await loadAppData();
-          setIsLoading(false);
+          // Load data in parallel, but release the UI immediately
+          loadAppData().finally(() => {
+            if (isMounted) setIsLoading(false);
+          });
         }
       } else {
         setCurrentUser(null);
@@ -156,27 +132,20 @@ const App: React.FC = () => {
       }
     });
 
-    initAuth();
-
-    // Safety timeout to ensure loading screen doesn't hang forever
-    const timeout = setTimeout(() => {
-      if (isMounted && isLoading) {
-        console.warn('Initial load timed out. Forcing loading state to false.');
-        setIsLoading(false);
-      }
-    }, 10000);
+    // Check initial session
+    supabaseService.getSession().then(session => {
+      if (!session && isMounted) setIsLoading(false);
+    });
 
     return () => {
       isMounted = false;
       subscription.unsubscribe();
-      clearTimeout(timeout);
     };
-  }, []);
+  }, [currentUser?.id]); // Depend on user id to avoid re-runs
 
   const loadAppData = async () => {
     try {
       const [usersData, clientsData, tasksData] = await Promise.all([
-        supabaseService.getUsers(),
         supabaseService.getClients(),
         supabaseService.getTasks()
       ]);
