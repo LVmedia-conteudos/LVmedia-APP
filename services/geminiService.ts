@@ -1,9 +1,8 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-// The API key is handled externally via process.env.API_KEY. Use it directly to ensure compatibility.
-/* Fix: Always use the standard initialization pattern from guidelines */
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const GEMINI_API_KEY = import.meta.env.GEMINI_API_KEY || '';
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 export const generateBriefing = async (title: string, format: string, channel: string) => {
   try {
